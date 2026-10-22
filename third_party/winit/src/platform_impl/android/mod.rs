@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use android_activity::input::{Axis, Button, InputEvent, KeyAction, Keycode, MotionAction, MotionEvent, Source};
+use android_activity::input::{Axis, InputEvent, KeyAction, Keycode, MotionAction, MotionEvent, Source};
 use android_activity::{
     AndroidApp, AndroidAppWaker, ConfigurationRef, InputStatus, MainEvent, Rect,
 };
@@ -534,25 +534,12 @@ impl<T: 'static> EventLoop<T> {
                 dispatch(WindowEvent::MouseWheel { device_id, delta, phase: TouchPhase::Moved });
             },
             MotionAction::ButtonPress | MotionAction::ButtonRelease => {
-                // Only a press or a release carries the button that changed; the primary
-                // button normally arrives as Down/Up instead, but report it if a device
-                // sends it here too.
-                let button = match motion_event.action_button() {
-                    Button::Primary => MouseButton::Left,
-                    Button::Secondary => MouseButton::Right,
-                    Button::Tertiary => MouseButton::Middle,
-                    Button::Back => MouseButton::Back,
-                    Button::Forward => MouseButton::Forward,
-                    _ => return InputStatus::Unhandled,
-                };
-                let state = match motion_event.action() {
-                    MotionAction::ButtonPress => ElementState::Pressed,
-                    _ => ElementState::Released,
-                };
-                if let Some(position) = position {
-                    dispatch(WindowEvent::CursorMoved { device_id, position });
-                }
-                dispatch(WindowEvent::MouseInput { device_id, state, button });
+                // The button that changed is only reachable through
+                // `AMotionEvent_getActionButton`, which is Android 12+ (API 31). A static
+                // reference to it makes the whole library fail to load on Android 11 and older
+                // ("cannot locate symbol AMotionEvent_getActionButton"), so this build trades
+                // non-primary mouse buttons away: primary presses arrive as Down/Up below.
+                return InputStatus::Unhandled;
             },
             MotionAction::Down | MotionAction::Up => {
                 // Android reports a mouse's primary button as an ordinary down/up, and a
@@ -561,7 +548,7 @@ impl<T: 'static> EventLoop<T> {
                 // click would also select or scrub as a left one. Check `Down` only, since on
                 // `Up` the button state may already be cleared (and a release the app never saw
                 // pressed is harmless).
-                let primary = motion_event.button_state().primary() || motion_event.action_button() == Button::Primary;
+                let primary = motion_event.button_state().primary();
                 if motion_event.action() == MotionAction::Down && !primary {
                     return InputStatus::Handled;
                 }
