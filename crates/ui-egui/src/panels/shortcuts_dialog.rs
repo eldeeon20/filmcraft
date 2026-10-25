@@ -146,7 +146,10 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
     record(app, ctx);
     let t = app.tokens;
     let screen = ctx.content_rect();
-    let size = vec2((screen.width() - 40.0).clamp(760.0, 1320.0), (screen.height() - 60.0).clamp(560.0, 900.0));
+    // Fit the viewport: clamping to a 760 px minimum overflows a phone screen (the dialog then
+    // sits half off-screen and its lists are unreachable). Never ask for more than fits.
+    let avail = vec2((screen.width() - 40.0).max(200.0), (screen.height() - 60.0).max(240.0));
+    let size = vec2(avail.x.clamp(avail.x.min(760.0), avail.x.min(1320.0)), avail.y.clamp(avail.y.min(560.0), avail.y.min(900.0)));
     let mut close: Option<bool> = None; // Some(true) = OK, Some(false) = Cancel
     let mut open = true;
     egui::Window::new(tl!("Keyboard Shortcuts"))
@@ -161,27 +164,36 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
         .frame(egui::Frame::window(&ctx.global_style()).fill(t.panel_bg).inner_margin(14.0))
         .show(ctx, |ui| {
             ui.set_width(size.x);
-            header(app, ui, &t);
-            ui.add_space(8.0);
-            let kb_h = (size.y * 0.42).clamp(220.0, 360.0);
-            let (kb, _) = ui.allocate_exact_size(vec2(size.x, kb_h), Sense::hover());
-            keyboard(app, ui, kb, &t);
-            legend(ui, &t);
-            ui.add_space(6.0);
-            let rest_h = (size.y - kb_h - 160.0).max(160.0);
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_width(size.x * 0.6);
-                    command_list(app, ui, rest_h, &t);
+            // Outer scroll: on a small screen the fixed content (keyboard + legend + lists +
+            // footer) is taller than the dialog, so everything must stay reachable by scroll.
+            egui::ScrollArea::vertical()
+                .id_salt("shortcuts-body")
+                .max_height(size.y)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.set_width(size.x);
+                    header(app, ui, &t);
+                    ui.add_space(8.0);
+                    let kb_h = (size.y * 0.42).clamp(220.0, 360.0);
+                    let (kb, _) = ui.allocate_exact_size(vec2(size.x, kb_h), Sense::hover());
+                    keyboard(app, ui, kb, &t);
+                    legend(ui, &t);
+                    ui.add_space(6.0);
+                    let rest_h = (size.y - kb_h - 160.0).max(160.0);
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(size.x * 0.6);
+                            command_list(app, ui, rest_h, &t);
+                        });
+                        ui.add_space(12.0);
+                        ui.vertical(|ui| {
+                            ui.set_width(size.x * 0.4 - 14.0);
+                            key_detail(app, ui, rest_h, &t);
+                        });
+                    });
+                    ui.add_space(6.0);
+                    close = footer(app, ui, &t);
                 });
-                ui.add_space(12.0);
-                ui.vertical(|ui| {
-                    ui.set_width(size.x * 0.4 - 14.0);
-                    key_detail(app, ui, rest_h, &t);
-                });
-            });
-            ui.add_space(6.0);
-            close = footer(app, ui, &t);
         });
     if !open {
         close = Some(false);

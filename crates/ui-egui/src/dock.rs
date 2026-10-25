@@ -312,6 +312,27 @@ pub fn workspace(name: &str) -> DockNode {
     use PanelKind::*;
     use SplitSize::*;
     let bottom_editing = || hsplit(FixedA(64.0), tabs(&[Tools], 0), hsplit(FixedB(116.0), tabs(&[Timeline], 0), tabs(&[AudioMeters], 0)));
+    // Android / phone width: the desktop trees (`FixedB(450)` side columns, nested h-splits)
+    // collapse below ~500 px and the monitor ends up misaligned. Stack monitor and timeline
+    // full width and reach the other panels through tabs instead of side-by-side splits.
+    if cfg!(target_os = "android") {
+        return match name {
+            "Assembly" | "Color" | "Effects" | "Audio" | "Captions and Graphics" => vsplit(
+                Ratio(0.5),
+                tabs(&[Source, Program, EffectControls, LumetriColor, EssentialGraphics, Properties, Text], 0),
+                vsplit(Ratio(0.62), tabs(&[Project, MediaBrowser, Effects, Markers, History], 0), tabs(&[Timeline], 0)),
+            ),
+            _ => vsplit(
+                Ratio(0.52),
+                tabs(&[Source, Program, EffectControls, Properties, Metadata], 0),
+                vsplit(
+                    Ratio(0.62),
+                    tabs(&[Project, MediaBrowser, Libraries, Info, Effects, Markers, History], 0),
+                    tabs(&[Timeline, Tools, AudioMeters], 0),
+                ),
+            ),
+        };
+    }
     match name {
         "Assembly" => vsplit(
             Ratio(0.52),
