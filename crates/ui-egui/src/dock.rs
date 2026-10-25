@@ -260,6 +260,12 @@ pub fn saved_layout(prefs: &WorkspacePrefs, name: &str) -> DockNode {
 }
 
 pub fn saved_docking(prefs: &WorkspacePrefs, name: &str) -> Layout {
+    // A layout saved on a desktop is a tree of side-by-side splits sized for a wide window: on a
+    // phone every `split_rect` below ~500 px collapses and whole panels vanish or stack inside
+    // each other. Always rebuild from the compact Android tree instead of the saved one.
+    if cfg!(target_os = "android") {
+        return Layout { root: workspace(name), floating: vec![] };
+    }
     let saved = prefs.saved.iter().find(|saved| saved.name == name).and_then(|saved| {
         let mut layout = Layout {
             root: serde_json::from_value(saved.layout.clone()).ok()?,
@@ -319,12 +325,12 @@ pub fn workspace(name: &str) -> DockNode {
         return match name {
             "Assembly" | "Color" | "Effects" | "Audio" | "Captions and Graphics" => vsplit(
                 Ratio(0.5),
-                tabs(&[Source, Program, EffectControls, LumetriColor, EssentialGraphics, Properties, Text], 0),
+                tabs(&[Source, Program, EffectControls, LumetriColor, EssentialGraphics, Properties, Text], 1),
                 vsplit(Ratio(0.62), tabs(&[Project, MediaBrowser, Effects, Markers, History], 0), tabs(&[Timeline], 0)),
             ),
             _ => vsplit(
                 Ratio(0.52),
-                tabs(&[Source, Program, EffectControls, Properties, Metadata], 0),
+                tabs(&[Source, Program, EffectControls, Properties, Metadata], 1),
                 vsplit(
                     Ratio(0.62),
                     tabs(&[Project, MediaBrowser, Libraries, Info, Effects, Markers, History], 0),
@@ -565,7 +571,18 @@ fn layout_inner(
         }
         DockNode::Split { vertical, size, a, b } => {
             let axis = if *vertical { SplitAxis::Vertical } else { SplitAxis::Horizontal };
-            let Some(split) = split_rect(rect, axis, size.shared(), t.gap, 20.0) else { return };
+            // No room for both children (a phone width, a collapsed saved layout): render one of
+            // them in the whole rect instead of dropping the subtree. Prefer the remainder after
+            // a FixedA gutter (the gutter is the expendable side) and the first child otherwise.
+            let Some(split) = split_rect(rect, axis, size.shared(), t.gap, 20.0) else {
+                let keep_b = matches!(size, SplitSize::FixedA(_));
+                let (fallback, sub_path) = if keep_b { (b, true) } else { (a, false) };
+                let mut path_vec = tree_path.to_vec();
+                path_vec.push(sub_path);
+                let suffix = if keep_b { 'b' } else { 'a' };
+                layout_inner(ui, fallback, rect, t, &format!("{path}{suffix}"), &path_vec, out, reg, actions);
+                return;
+            };
             let id = egui::Id::new(("dock-gutter", path.to_string()));
             let handle_style = ResizeHandleStyle { hovered: t.focus.gamma_multiply(0.4), dragged: t.focus.gamma_multiply(0.9), focused: t.focus };
             let label = if *vertical { tl!("Height:") } else { tl!("Width:") };

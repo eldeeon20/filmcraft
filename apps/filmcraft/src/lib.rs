@@ -378,6 +378,19 @@ fn app_creator(
             app.dialog = None;
         }
         app.integrated_titlebar = cfg!(target_os = "macos");
+        // Phone: the in-window menu bar (ten menus, 520 px wide) pushes the whole header off
+        // screen and is unusable with a thumb, so it stays hidden (PhotoCraft's mobile shell does
+        // the same) and egui's widgets get touch-sized hit targets.
+        #[cfg(target_os = "android")]
+        {
+            app.ui.show_menu_bar = false;
+            cc.egui_ctx.global_style_mut(|s| {
+                s.spacing.interact_size = egui::vec2(44.0, 40.0);
+                s.spacing.button_padding = egui::vec2(12.0, 10.0);
+                s.spacing.item_spacing = egui::vec2(8.0, 8.0);
+                s.spacing.icon_width = 24.0;
+            });
+        }
         if let Some(rs) = cc.wgpu_render_state.clone()
             && std::env::var_os("FILMCRAFT_CPU_COMPOSITE").is_none()
         {
