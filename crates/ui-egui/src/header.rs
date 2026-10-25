@@ -72,41 +72,39 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // left content are dropped right-to-left.
     let right_limit = left_end + 24.0;
     let mut rx = rect.max.x - 14.0;
-    let mut btn = |ui: &mut egui::Ui, icon: Icon, id: &str, tip: &str, app: &mut FilmcraftApp| -> egui::Response {
+    let mut btn = |ui: &mut egui::Ui, icon: Icon, id: &str, tip: &str, app: &mut FilmcraftApp| -> Option<egui::Response> {
         let r = Rect::from_center_size(pos2(rx - 14.0, rect.center().y), vec2(28.0, 28.0));
         rx -= 38.0;
-        let fits = r.min.x > right_limit;
-        let resp = if fits {
-            ui.interact(r, egui::Id::new(("hdr", id)), Sense::click()).on_hover_text(tip)
-        } else {
-            egui::Response::default()
-        };
         app.auto.add(&format!("header.{id}"), r, tip);
-        if fits {
-            if resp.hovered() {
-                ui.painter().rect_filled(r, 4.0, t.hover);
-            }
-            icons::paint(ui.painter(), r.shrink(6.0), icon, if resp.hovered() { t.text } else { t.text_dim });
+        // Out of room on a narrow screen: no hit-test and no paint, so the left cluster's
+        // clicks (tabs / title) are never stolen by an icon sitting on top of them.
+        if r.min.x <= right_limit {
+            return None;
         }
-        resp
+        let resp = ui.interact(r, egui::Id::new(("hdr", id)), Sense::click()).on_hover_text(tip);
+        if resp.hovered() {
+            ui.painter().rect_filled(r, 4.0, t.hover);
+        }
+        icons::paint(ui.painter(), r.shrink(6.0), icon, if resp.hovered() { t.text } else { t.text_dim });
+        Some(resp)
     };
-    if btn(ui, Icon::Fullscreen, "fullscreen", tl!("Full screen"), app).clicked() {
+    if btn(ui, Icon::Fullscreen, "fullscreen", tl!("Full screen"), app).is_some_and(|r| r.clicked()) {
         let fs = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fs));
     }
-    if btn(ui, Icon::Speaker, "volume", tl!("Volume"), app).clicked() {
+    if btn(ui, Icon::Speaker, "volume", tl!("Volume"), app).is_some_and(|r| r.clicked()) {
         app.ui.status = tl!("Master volume: use the Audio Track Mixer").into();
     }
-    if btn(ui, Icon::Search, "search", tl!("Search"), app).clicked() {
+    if btn(ui, Icon::Search, "search", tl!("Search"), app).is_some_and(|r| r.clicked()) {
         app.show_panel(crate::dock::PanelKind::Effects);
     }
-    if btn(ui, Icon::Bell, "notifications", tl!("Progress"), app).clicked() {
+    if btn(ui, Icon::Bell, "notifications", tl!("Progress"), app).is_some_and(|r| r.clicked()) {
         app.ui.mode = Mode::Export;
     }
     // Quick Export: a popup with File Name & Location, a preset list and Export (Premiere 26)
     let mut qx = rect.max.x - 14.0 - 4.0 * 38.0; // the fifth button from the right
     if qx < right_limit + 60.0 { qx = right_limit + 60.0; }
-    if btn(ui, Icon::Export, "quickExport", tl!("Quick Export"), app).clicked() {
+    if btn(ui, Icon::Export, "quickExport", tl!("Quick Export"), app).is_some_and(|r| r.clicked()) {
         app.ui.export.quick_open = !app.ui.export.quick_open;
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("quick-export-toggled"), true));
     }
@@ -118,12 +116,14 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         _ => (Icon::Moon, tl!("Dark")),
     };
     let tip = format!("{}: {mode}", tl!("Appearance Mode"));
-    let appearance = btn(ui, icon, "appearance", &tip, app);
-    appearance.context_menu(|ui| crate::panels::settings::appearance_context_menu(app, ui));
-    if appearance.clicked() {
-        crate::panels::settings::cycle_appearance(app, ui.ctx());
+    if let Some(appearance) = btn(ui, icon, "appearance", &tip, app) {
+        appearance.context_menu(|ui| crate::panels::settings::appearance_context_menu(app, ui));
+        if appearance.clicked() {
+            crate::panels::settings::cycle_appearance(app, ui.ctx());
+        }
     }
     let ws_resp = btn(ui, Icon::Workspaces, "workspaces", tl!("Workspaces"), app);
+    let ws_clicked = ws_resp.as_ref().is_some_and(|r| r.clicked());
     // workspace name (caps)
     let ws = crate::i18n::t(&app.ui.workspace).to_uppercase();
     let wg = p.layout_no_wrap(ws.clone(), Tokens::ui(11.0), t.text_dim);
@@ -164,7 +164,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
     }
     let popup_id = egui::Id::new("workspaces-popup");
-    if ws_resp.clicked() || wresp.clicked() {
+    if ws_clicked || wresp.clicked() {
         ui.ctx().data_mut(|d| d.insert_temp(popup_id, true));
     }
     let open = ui.ctx().data(|d| d.get_temp::<bool>(popup_id).unwrap_or(false));
@@ -188,7 +188,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
             });
         });
-        if area.response.clicked_elsewhere() && !(ws_resp.clicked() || wresp.clicked()) {
+        if area.response.clicked_elsewhere() && !(ws_clicked || wresp.clicked()) {
             ui.ctx().data_mut(|d| d.insert_temp(popup_id, false));
         }
     }
