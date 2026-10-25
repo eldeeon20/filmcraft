@@ -67,17 +67,27 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     // Document title, centred
     let title = if app.session.is_dirty() { tlf!("{name} - Edited", name = app.session.project.name) } else { app.session.project.name.clone() };
-    // Right cluster: icons at ~38 pt pitch, then workspace name in caps.
+    // Right cluster: icons at ~38 pt pitch, then workspace name in caps. On narrow screens (phones)
+    // the cluster must not collide with the left tabs / menu bar, so buttons that would cross the
+    // left content are dropped right-to-left.
+    let right_limit = left_end + 24.0;
     let mut rx = rect.max.x - 14.0;
     let mut btn = |ui: &mut egui::Ui, icon: Icon, id: &str, tip: &str, app: &mut FilmcraftApp| -> egui::Response {
         let r = Rect::from_center_size(pos2(rx - 14.0, rect.center().y), vec2(28.0, 28.0));
         rx -= 38.0;
-        let resp = ui.interact(r, egui::Id::new(("hdr", id)), Sense::click()).on_hover_text(tip);
+        let fits = r.min.x > right_limit;
+        let resp = if fits {
+            ui.interact(r, egui::Id::new(("hdr", id)), Sense::click()).on_hover_text(tip)
+        } else {
+            egui::Response::default()
+        };
         app.auto.add(&format!("header.{id}"), r, tip);
-        if resp.hovered() {
-            ui.painter().rect_filled(r, 4.0, t.hover);
+        if fits {
+            if resp.hovered() {
+                ui.painter().rect_filled(r, 4.0, t.hover);
+            }
+            icons::paint(ui.painter(), r.shrink(6.0), icon, if resp.hovered() { t.text } else { t.text_dim });
         }
-        icons::paint(ui.painter(), r.shrink(6.0), icon, if resp.hovered() { t.text } else { t.text_dim });
         resp
     };
     if btn(ui, Icon::Fullscreen, "fullscreen", tl!("Full screen"), app).clicked() {
@@ -94,7 +104,8 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         app.ui.mode = Mode::Export;
     }
     // Quick Export: a popup with File Name & Location, a preset list and Export (Premiere 26)
-    let qx = rect.max.x - 14.0 - 4.0 * 38.0; // the fifth button from the right
+    let mut qx = rect.max.x - 14.0 - 4.0 * 38.0; // the fifth button from the right
+    if qx < right_limit + 60.0 { qx = right_limit + 60.0; }
     if btn(ui, Icon::Export, "quickExport", tl!("Quick Export"), app).clicked() {
         app.ui.export.quick_open = !app.ui.export.quick_open;
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("quick-export-toggled"), true));
